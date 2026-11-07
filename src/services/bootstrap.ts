@@ -1,0 +1,186 @@
+import { notFound, redirect } from "next/navigation";
+
+import type { MembershipRole, Organisation } from "@/types/domain";
+
+import { supabaseServer } from "./supabase/server";
+
+/**
+ * Who is asking, and on behalf of which organisation.
+ *
+ * Every server component and server action starts here. Note what this does
+ * NOT do: it does not decide what the user may see. RLS does that. This
+ * resolves identity so the UI can be shaped sensibly — hiding a button a
+ * policy would refuse anyway.
+ *
+ * A hidden button is cosmetic. The enforcement is in the database.
+ */
+
+export interface Membership {
+  orgId: string;
+  role: MembershipRole;
+  organisation: Organisation;
+}
+
+/**
+ * Identity, with no organisation demanded.
+ *
+ * `Session` is this plus an ACTIVE organisation, and that difference is the
+ * whole reason both exist — see `requireActor` below.
+ */
+export interface Actor {
+  userId: string;
+  email: string | null;
+  memberships: Membership[];
+  isPlatformAdmin: boolean;
+}
+
+export interface Session extends Actor {
+  /** The organisation being viewed. */
+  activeOrg: Organisation;
+  activeRole: MembershipRole;
+}
+
+/**
+ * PostgREST infers result types from a LITERAL select string. A constant built
+ * by concatenation widens to `string`, inference collapses to
+ * `GenericStringError`, and every result has to be cast through `unknown`.
+ * So these stay literal, and the hand-written Row interface below is the real
+ * contract with the database — keep the two in step.
+ */
+const MEMBERSHIP_COLUMNS =
+  "org_id, role, organisations!inner(id, name, slug, timezone, default_silence_threshold_days)";
+
+interface MembershipRow {
+  org_id: string;
+  role: MembershipRole;
+  organisations: {
+    id: string;
+    name: string;
+    slug: string;
+    timezone: string;
+    default_silence_threshold_days: number;
+  };
+}
+
+export function mapOrganisation(row: MembershipRow["organisations"]): Organisation {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    timezone: row.timezone,
+    defaultSilenceThresholdDays: row.default_silence_threshold_days,
+  };
+}
+
+/**
+ * The signed-in user, or a redirect to the login screen.
+ *
+ * `getUser()`, not `getSession()`: it revalidates the token against the auth
+ * server, so a forged or stale cookie cannot pass.
+ */
+export async function requireUser() {
+  const supabase = await supabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+  return { supabase, user };
+}
+
+/**
+ * The platform owner, without requiring a membership.
+ *
+ * THE BOOTSTRAPPING CASE. `requireSession` sends a user with no organisation
+ * to /no-access — correct for the app, fatal for the admin area: a freshly
+ * seeded platform owner has no membership yet, and the whole point of /admin
+ * is to create the first organisation. Routing them to "you are not in an
+ * organisation" would make the product unopenable from a cold start.
+ */
+export async function requirePlatformAdmin(): Promise<{
+  userId: string;
+  email: string | null;
+}> {
+  const { supabase, user } = await requireUser();
+
+  const { data } = await supabase
+    .from("platform_admins")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  // notFound(), not redirect: a redirect confirms the route exists to
+  // somebody who should not know that it does.
+  if (!data) notFound();
+
+  return { userId: user.id, email: user.email ?? null };
+}
+
+/**
+ * Who is asking, WITHOUT requiring them to be in an organisation.
+ *
+ * THIS IS THE BOOTSTRAPPING PATH, and it exists because the obvious thing is
+ * a trap. `requireSession` redirects a user with no membership to
+ * `/no-access`, which is right for the app and fatal for the actions that
+ * CREATE the first organisation — the owner has no membership at that moment,
+ * by definition. `/admin`'s layout already avoids `requireSession` for exactly
+ * this reason; its actions used to call it anyway, so the screen loaded and
+ * every submission redirected into a dead end.
+ *
+ * Nobody hit it while the demo seed had put the owner in an organisation. The
+ * first person to delete that organisation would have locked themselves out
+ * of their own product.
+ *
+ * So: anything that may run before the first membership exists takes an
+ * `Actor`. Anything that renders a board takes a `Session`.
+ */
+export async function requireActor(): Promise<Actor> {
+  const { supabase, user } = await requireUser();
+
+  const [{ data, error }, { data: adminRow }] = await Promise.all([
+    supabase.from("memberships").select(MEMBERSHIP_COLUMNS).eq("user_id", user.id),
+    supabase.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle(),
+  ]);
+
+  if (error) {
+    // Never interpolate a row into an error message: it can reach a user who
+    // was not permitted to read it.
+    throw new Error(`Failed to load memberships: ${error.message}`);
+  }
+
+  const rows = (data ?? []) as unknown as MembershipRow[];
+
+  return {
+    userId: user.id,
+    email: user.email ?? null,
+    memberships: rows.map((row) => ({
+      orgId: row.org_id,
+      role: row.role,
+      organisation: mapOrganisation(row.organisations),
+    })),
+    isPlatformAdmin: Boolean(adminRow),
+  };
+}
+
+/**
+ * The full session, or a redirect.
+ *
+ * A signed-in user with no membership is sent to `/no-access` rather than an
+ * empty dashboard. Access here is granted by the platform owner, so "you are
+ * signed in but nobody has added you to an organisation yet" is an expected
+ * state with a real explanation, not an error.
+ */
+export async function requireSession(preferredOrgId?: string): Promise<Session> {
+  const actor = await requireActor();
+
+  if (actor.memberships.length === 0) redirect("/no-access");
+
+  const active =
+    actor.memberships.find((m) => m.orgId === preferredOrgId) ?? actor.memberships[0];
+
+  return {
+    ...actor,
+    activeOrg: active.organisation,
+    activeRole: active.role,
+  };
+}
