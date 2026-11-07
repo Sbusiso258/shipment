@@ -183,6 +183,21 @@ export interface Organisation {
   /** IANA zone. Every day boundary in this app resolves through it. */
   timezone: string;
   defaultSilenceThresholdDays: number;
+
+  /**
+   * WHICH PRODUCT THIS ORGANISATION GETS.
+   *
+   * True for a logistics business that records journeys — the paying
+   * customer. False for a counterparty: a sender or recipient who raises
+   * requests, files evidence and watches the loads shared with it, but never
+   * records a journey of its own.
+   *
+   * The column has existed since `0001`, where it was defined for exactly
+   * this ("a counterparty that only ever views shipments shared with it").
+   * Nothing read it until the portal needed to decide which shell to render,
+   * so this is a column finally being used rather than a new concept.
+   */
+  isSubscriber: boolean;
 }
 
 export interface LocationPoint {

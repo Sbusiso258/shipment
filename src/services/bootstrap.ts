@@ -48,7 +48,7 @@ export interface Session extends Actor {
  * contract with the database — keep the two in step.
  */
 const MEMBERSHIP_COLUMNS =
-  "org_id, role, organisations!inner(id, name, slug, timezone, default_silence_threshold_days)";
+  "org_id, role, organisations!inner(id, name, slug, timezone, is_subscriber, default_silence_threshold_days)";
 
 interface MembershipRow {
   org_id: string;
@@ -58,6 +58,7 @@ interface MembershipRow {
     name: string;
     slug: string;
     timezone: string;
+    is_subscriber: boolean;
     default_silence_threshold_days: number;
   };
 }
@@ -69,6 +70,7 @@ export function mapOrganisation(row: MembershipRow["organisations"]): Organisati
     slug: row.slug,
     timezone: row.timezone,
     defaultSilenceThresholdDays: row.default_silence_threshold_days,
+    isSubscriber: row.is_subscriber,
   };
 }
 
@@ -138,7 +140,18 @@ export async function requireActor(): Promise<Actor> {
   const { supabase, user } = await requireUser();
 
   const [{ data, error }, { data: adminRow }] = await Promise.all([
-    supabase.from("memberships").select(MEMBERSHIP_COLUMNS).eq("user_id", user.id),
+    // ORDERED, DELIBERATELY. This query had no `order by`, so `memberships[0]`
+    // below was whatever Postgres happened to return — which picked an
+    // arbitrary active organisation for a multi-org user. Harmless while
+    // there was one shell; now that a membership decides which PRODUCT
+    // somebody sees, an arbitrary first row decides it. Oldest membership
+    // first: the organisation somebody joined first is the one they think of
+    // as theirs.
+    supabase
+      .from("memberships")
+      .select(MEMBERSHIP_COLUMNS)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true }),
     supabase.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle(),
   ]);
 
