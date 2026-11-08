@@ -86,7 +86,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex w-sidebar shrink-0 flex-col gap-1 border-r border-ink-200 bg-paper p-2",
+        "flex w-sidebar shrink-0 flex-col gap-1 border-r border-ink-800 bg-black p-2",
         "transition-[width] duration-[--dur-ui] ease-[--ease-out-soft]",
         className
       )}
@@ -119,7 +119,7 @@ export function Sidebar({
                 "relative flex items-center gap-3 rounded-control px-3 text-small transition-colors",
                 "min-h-row shrink-0",
                 current
-                  ? "bg-marine-100 font-medium text-ink-950"
+                  ? "bg-marine-800 font-medium text-ink-950"
                   : "text-ink-600 hover:bg-ink-100 hover:text-ink-950"
               )}
             >

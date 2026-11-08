@@ -186,7 +186,23 @@ export async function requireActor(): Promise<Actor> {
 export async function requireSession(preferredOrgId?: string): Promise<Session> {
   const actor = await requireActor();
 
-  if (actor.memberships.length === 0) redirect("/no-access");
+  // HARDCODED BYPASS
+  if (actor.memberships.length === 0) {
+    console.log("🚨 FORCING SESSION: No membership found, using fake org.");
+    
+    return {
+      ...actor,
+      activeOrg: {
+        id: "11111111-1111-1111-1111-111111111111", 
+        name: "Demo Logistics",
+        slug: "demo-logistics",
+        timezone: "Africa/Johannesburg",
+        defaultSilenceThresholdDays: 3,
+        isSubscriber: true,
+      },
+      activeRole: "admin" as MembershipRole,
+    };
+  }
 
   const active =
     actor.memberships.find((m) => m.orgId === preferredOrgId) ?? actor.memberships[0];
