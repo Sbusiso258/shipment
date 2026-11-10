@@ -151,3 +151,31 @@ export async function orNoticed<T>(
     throw error;
   }
 }
+
+/**
+ * Record a rejected write where an engineer can see it.
+ *
+ * WHY THIS EXISTS. Until now this application logged nothing at all — no
+ * `console.*` anywhere in `src/`, no reporter, no `instrumentation.ts`. So a
+ * write refused by Postgres produced a sentence for the user and left no
+ * trace behind it, and "places cannot be saved" was diagnosable only by
+ * timing how long the action took. That is not a debuggable system.
+ *
+ * WHAT IT DELIBERATELY DOES NOT LOG: the row. Not the name, not the address,
+ * not the coordinate, not the org id. A log line is read by people who were
+ * never granted sight of the record, and `fail.ts` already draws that
+ * distinction — a constraint or column NAME is safe to repeat, the DATA is
+ * not. Everything here is schema vocabulary plus an error code.
+ */
+export function logWriteFailure(what: string, error: PostgrestLikeError): void {
+  const parts = [
+    `[write-failed] ${what}`,
+    error.code ? `code=${error.code}` : null,
+    // PostgREST puts the constraint name in `details`/`hint` for some errors
+    // and inside `message` for others, so the message is the reliable field —
+    // and it names objects, never rows.
+    `message=${String(error.message).split("\n")[0].slice(0, 300)}`,
+  ].filter(Boolean);
+
+  console.error(parts.join(" "));
+}

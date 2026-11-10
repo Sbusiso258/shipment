@@ -1,6 +1,6 @@
 import type { LocationKind, LocationPoint } from "@/types/domain";
 
-import { fail } from "./fail";
+import { fail, logWriteFailure } from "./fail";
 import { mapLocationPoint, type LocationPointRow } from "./mappers";
 import { supabaseServer } from "./supabase/server";
 
@@ -116,7 +116,10 @@ export async function createLocation(
     notes: input.notes,
   });
 
-  if (error) return { ok: false, error: describe(error.message, "Could not save the place.") };
+  if (error) {
+    logWriteFailure("create a place", error);
+    return { ok: false, error: describe(error.message, "Could not save the place.") };
+  }
   return { ok: true, error: null };
 }
 
@@ -149,7 +152,10 @@ export async function updateLocation(
     .eq("id", locationId)
     .select("id");
 
-  if (error) return { ok: false, error: describe(error.message, "Could not save the place.") };
+  if (error) {
+    logWriteFailure("update a place", error);
+    return { ok: false, error: describe(error.message, "Could not save the place.") };
+  }
 
   // A `using` failure raises nothing — the update simply matches no rows.
   if (!data || data.length === 0) {
