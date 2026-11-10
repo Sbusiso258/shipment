@@ -89,4 +89,18 @@ begin
       where location_id = without_town and archived_at is null) = 0,
     'an archived place is still reported as archived by the view'
   );
+
+  -- CLEAN UP AFTER OURSELVES, and the reason is specific rather than tidiness.
+  --
+  -- `verify-migrations.mjs` sorts these files LEXICALLY, so `-11-` runs before
+  -- `-2-`. Several later files pick their endpoints with
+  -- `order by created_at limit 1` and `offset 1` over this organisation's
+  -- locations — and `now()` is constant within a transaction, so rows added
+  -- here share a timestamp with each other and the sort has ties to break
+  -- arbitrarily. Leaving two extra rows behind made one of those files draw
+  -- the SAME location twice and trip `shipments_distinct_endpoints`.
+  --
+  -- The fixtures are shared state. A file that adds to them has to put them
+  -- back.
+  delete from public.locations where id in (with_town, without_town);
 end $$;
