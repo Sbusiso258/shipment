@@ -19,6 +19,16 @@ export default async function LoginPage({
   const configured = isSupabaseConfigured();
   const devLoginFailed = error === "dev_login_failed";
 
+  // THE CALLBACK'S OWN FAILURES, which were swallowed. `auth/callback` sends
+  // people here with `error=link_expired` or `error=missing_code`, and this
+  // page only ever handled `dev_login_failed` — so somebody clicking a dead
+  // invitation link landed on a blank sign-in form with no idea why.
+  //
+  // For an invitation-only product that link is the ONLY way in, which makes
+  // this the likeliest first contact anybody has with the thing failing.
+  const linkExpired = error === "link_expired";
+  const missingCode = error === "missing_code";
+
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-16">
       <div className="flex flex-col gap-2">
@@ -53,6 +63,25 @@ export default async function LoginPage({
             </li>
           </ul>
           <p className="mt-2">You can still sign in by hand below.</p>
+        </div>
+      ) : null}
+
+      {linkExpired || missingCode ? (
+        <div
+          role="alert"
+          className="rounded-panel border border-late/30 bg-late-bg p-4 text-small text-late"
+        >
+          <p className="font-medium">
+            {linkExpired ? "That link has expired." : "That link was incomplete."}
+          </p>
+          <p className="mt-2">
+            {linkExpired
+              ? "Sign-in links can only be used once, and they time out. Ask whoever invited you to send a new one."
+              : "The address was missing the code it needs, which usually means it was cut short when it was copied or forwarded."}
+          </p>
+          <p className="mt-2">
+            If you already have a password, you can sign in below instead.
+          </p>
         </div>
       ) : null}
 
