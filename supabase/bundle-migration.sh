@@ -60,7 +60,25 @@ OUT="$DIR/apply-$LABEL.sql"
 # Same refusal as the plural bundler: these cannot run inside a transaction,
 # and a bundle that fails halfway through a live database is the thing this
 # script exists to prevent.
-if grep -niE "concurrently|alter type .* add value" "${SOURCES[@]}"; then
+#
+# COMMENTS ARE STRIPPED FIRST. This used to grep the raw file, so a migration
+# whose PROSE mentioned `concurrently` was refused — including one explaining
+# why it deliberately avoided it, which is exactly the comment a careful
+# migration carries. `sed` blanks everything from `--` to end of line without
+# deleting the line, so reported line numbers still match the original file,
+# and a real `create index concurrently` can never hide inside a line comment.
+OFFENDERS=""
+for SOURCE in "${SOURCES[@]}"; do
+  HITS=$(sed 's/--.*$//' "$SOURCE" \
+    | grep -niE "concurrently|alter type .* add value" || true)
+  if [ -n "$HITS" ]; then
+    OFFENDERS="${OFFENDERS}$(printf '%s\n' "$HITS" | sed "s|^|$SOURCE:|")
+"
+  fi
+done
+
+if [ -n "$OFFENDERS" ]; then
+  printf '%s' "$OFFENDERS" >&2
   echo >&2
   echo >&2 "REFUSING: the statements above cannot run inside a transaction."
   echo >&2 "Apply that migration on its own, statement by statement."
