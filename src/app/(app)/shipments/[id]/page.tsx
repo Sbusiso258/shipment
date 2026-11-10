@@ -18,7 +18,7 @@ import {
   canManageParties,
 } from "@/lib/roles";
 import { listAssignments, type Assignee } from "@/services/assignments";
-import { SchemaBehindError } from "@/services/fail";
+import { orNoticed } from "@/services/fail";
 import { requireSession } from "@/services/bootstrap";
 import { loadPlaces } from "@/services/checkpoints";
 import { loadShipmentHistory } from "@/services/history";
@@ -96,23 +96,8 @@ export default async function ShipmentPage({ params }: Params) {
   // the panels naming the migration. What it no longer does is hide the
   // shipment somebody came here to look at.
   //
-  // Returns the notice alongside the value rather than assigning to a
-  // variable in scope — a closure that writes to its surroundings is what the
-  // immutability lint is for, and threading it back is clearer anyway.
-  async function orNoticed<T>(
-    work: Promise<T>,
-    fallback: T
-  ): Promise<{ value: T; notice: string | null }> {
-    try {
-      return { value: await work, notice: null };
-    } catch (error) {
-      if (error instanceof SchemaBehindError) {
-        return { value: fallback, notice: error.message };
-      }
-      throw error;
-    }
-  }
-
+  // `orNoticed` now lives in `@/services/fail` beside `SchemaBehindError`, so
+  // the other pages that let a side query take them down can use it too.
   const [assignmentsResult, membersResult] = mayAssign
     ? await Promise.all([
         orNoticed(listAssignments(journey.shipment.id), [] as Awaited<

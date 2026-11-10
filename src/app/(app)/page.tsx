@@ -6,6 +6,7 @@ import type { RoutePoint } from "@/components/journey/route-map-gl";
 import type { JourneyClock } from "@/lib/journey";
 import { lastConfirmedPositions } from "@/lib/positions";
 import { loadRecentCheckpoints } from "@/services/activity";
+import { orNoticed } from "@/services/fail";
 import { requireSession } from "@/services/bootstrap";
 import { loadOversight, requestNow } from "@/services/oversight";
 
@@ -39,10 +40,17 @@ export default async function DashboardPage() {
     silenceThresholdDays: session.activeOrg.defaultSilenceThresholdDays,
   };
 
-  const [{ rows }, checkpoints] = await Promise.all([
+  // THE BOARD IS THE POINT OF THIS PAGE; the checkpoints are not. They supply
+  // the map's pins and nothing else, so a database that is behind on the
+  // checkpoint columns should cost the map its dots — not the whole dashboard.
+  // It used to cost the whole dashboard, because this `Promise.all` rejects if
+  // either side does.
+  const [{ rows }, checkpointsResult] = await Promise.all([
     loadOversight(nowMs, clock.timeZone, clock.silenceThresholdDays),
-    loadRecentCheckpoints(),
+    orNoticed(loadRecentCheckpoints(), [] as Awaited<ReturnType<typeof loadRecentCheckpoints>>),
   ]);
+
+  const checkpoints = checkpointsResult.value;
 
   // WHERE EACH LOAD ACTUALLY IS: the last stage confirmed at a known place.
   // Never a point between two stages — that would be a GPS fix nobody
@@ -97,6 +105,7 @@ export default async function DashboardPage() {
         mapped={mapped}
         clock={clock}
         styleBase={styleBaseFrom(process.env.NEXT_PUBLIC_MAP_STYLE_URL)}
+        mapNotice={checkpointsResult.notice}
       />
     </main>
   );

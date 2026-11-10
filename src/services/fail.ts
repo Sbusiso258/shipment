@@ -116,3 +116,38 @@ export function fail(what: string, error: PostgrestLikeError | string): never {
   if (isSchemaBehind(normalised)) throw new SchemaBehindError(message);
   throw new Error(message);
 }
+
+/**
+ * Run a read, and on a SCHEMA-BEHIND failure return a fallback and a notice
+ * instead of letting it take the page down.
+ *
+ * WHY THIS IS SHARED NOW. It was written inline in the shipment page, which
+ * is the one route that degrades a failed side query. Every other page lets
+ * one go down the whole screen: a `loadRecentCheckpoints` failure kills the
+ * dashboard even though it only supplies map pins, and a `listInvitations`
+ * failure hides the member list.
+ *
+ * NARROW ON PURPOSE. It catches `SchemaBehindError` and nothing else, so an
+ * RLS refusal, a timeout or a network fault still propagates. Those are not
+ * "this panel is unavailable" — they are "something is wrong", and swallowing
+ * them into a quiet notice is how a broken page starts looking fine.
+ *
+ * It lives here rather than in `src/lib` because it has to know
+ * `SchemaBehindError`, and `src/lib` may not depend on `src/services`.
+ *
+ * The notice is the service's own sentence, which already names the migration
+ * to apply — so the panel says what to do rather than that it failed.
+ */
+export async function orNoticed<T>(
+  work: Promise<T>,
+  fallback: T
+): Promise<{ value: T; notice: string | null }> {
+  try {
+    return { value: await work, notice: null };
+  } catch (error) {
+    if (error instanceof SchemaBehindError) {
+      return { value: fallback, notice: error.message };
+    }
+    throw error;
+  }
+}

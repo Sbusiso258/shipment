@@ -19,16 +19,36 @@ export function Dashboard({
   mapped,
   clock,
   styleBase,
+  mapNotice,
 }: {
   rows: BoardRow[];
   mapped: MappedShipment[];
   clock: JourneyClock;
   styleBase: string | null;
+  /**
+   * Set when the checkpoint read failed because the database is behind.
+   *
+   * It is rendered rather than swallowed on purpose. Degrading the map to
+   * "no pins" without saying why is indistinguishable from "nothing has been
+   * confirmed yet" — and this product's whole claim is that what it shows can
+   * be believed. A quiet empty map is the one outcome worse than an error.
+   */
+  mapNotice?: string | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
-    <div className="grid min-h-0 flex-1 gap-list lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)] lg:overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col gap-list lg:overflow-hidden">
+      {mapNotice ? (
+        <p
+          role="status"
+          className="rounded-control bg-late-bg px-3 py-2 text-small whitespace-pre-wrap text-late"
+        >
+          {mapNotice}
+        </p>
+      ) : null}
+
+      <div className="grid min-h-0 flex-1 gap-list lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)] lg:overflow-hidden">
       <TrackingMap
         shipments={mapped}
         selectedId={selectedId}
@@ -41,6 +61,7 @@ export function Dashboard({
         selectedId={selectedId}
         onSelect={setSelectedId}
       />
+      </div>
     </div>
   );
 }
