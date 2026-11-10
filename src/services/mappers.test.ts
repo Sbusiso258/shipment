@@ -4,12 +4,14 @@ import {
   mapAnnouncement,
   mapCheckpoint,
   mapLocationPoint,
+  mapLocationRow,
   mapMessage,
   mapShipment,
   mapTask,
   type AnnouncementRow,
   type CheckpointRow,
   type LocationPointRow,
+  type LocationRow,
   type MessageRow,
   type ShipmentRow,
   type TaskRow,
@@ -133,6 +135,48 @@ describe("mapCheckpoint", () => {
     expect(cp.latitude).toBeNull();
     expect(cp.longitude).toBeNull();
     expect(cp.placeName).toBeNull();
+  });
+});
+
+describe("mapLocationRow", () => {
+  const base: LocationRow = {
+    id: "l1",
+    name: "Durban Depot",
+    kind: "depot",
+    latitude: null,
+    longitude: null,
+    archived_at: null,
+    sa_places: { name: "Durban", latitude: "-29.858680", longitude: "31.021840" },
+  };
+
+  // The location's own pin wins over the town it sits in.
+  it("prefers an exact pin and says so", () => {
+    const point = mapLocationRow({ ...base, latitude: "-29.9", longitude: "31.1" });
+    expect(point.latitude).toBe(-29.9);
+    expect(point.coordinateSource).toBe("exact");
+  });
+
+  it("falls back to the town, and reports it as the town", () => {
+    const point = mapLocationRow(base);
+    expect(point.latitude).toBe(-29.85868);
+    expect(point.coordinateSource).toBe("place");
+    expect(point.placeName).toBe("Durban");
+  });
+
+  // NEVER 0,0. An unlocatable place reports that it has no position rather
+  // than rendering in the Atlantic, which is the one thing this mapper must
+  // not get wrong.
+  it("reports no position rather than inventing one", () => {
+    const point = mapLocationRow({ ...base, sa_places: null });
+    expect(point.latitude).toBeNull();
+    expect(point.longitude).toBeNull();
+    expect(point.coordinateSource).toBe("unknown");
+    expect(point.placeName).toBeNull();
+  });
+
+  // Postgres numerics arrive as strings through PostgREST.
+  it("parses numerics that arrive as strings", () => {
+    expect(typeof mapLocationRow(base).latitude).toBe("number");
   });
 });
 

@@ -1,24 +1,46 @@
 import type { LocationKind, LocationPoint } from "@/types/domain";
 
 import { fail, logWriteFailure } from "./fail";
-import { mapLocationPoint, type LocationPointRow } from "./mappers";
+import { mapLocationRow, type LocationRow } from "./mappers";
 import { supabaseServer } from "./supabase/server";
 
 /**
  * The places an organisation ships from and to.
  *
- * Reads go through `location_points`, the view that coalesces an exact
- * coordinate with the containing town's — so a caller never has to decide
- * which of the two to use, and the provenance comes back with it as
- * `coordinateSource`. The view is `security_invoker`, so it leaks no more than
- * the table.
+ * Reads go to `locations` directly, with the gazetteer entry embedded, and
+ * `mapLocationRow` coalesces an exact coordinate with the containing town's —
+ * so a caller never has to decide which of the two to use, and the provenance
+ * comes back with it as `coordinateSource`.
+ *
+ * THEY USED TO GO THROUGH THE `location_points` VIEW, and that is worth
+ * remembering rather than quietly undoing. The view did the same coalescing in
+ * SQL, which was tidier — right up to the day a live project was found holding
+ * an ordinary empty table of that name instead. Three read paths went through
+ * it, so the places list, the board's route lines and the journey map's
+ * endpoints all returned nothing at once, while every row sat untouched in
+ * `locations`. The product said "None yet" after nine depots had been saved.
+ *
+ * A table cannot drift into something else without the WRITE path failing
+ * loudly first, which is the property the view lacked.
  *
  * Writes go to `locations`. No org filter and no role check here: RLS decides
  * what these return and whether they land.
  */
 
-const LOCATION_POINT_COLUMNS =
-  "location_id, name, kind, effective_latitude, effective_longitude, coordinate_source, place_name";
+// READ THE BASE TABLE, not the `location_points` view.
+//
+// The view did the coalescing in SQL, and that made it the single point of
+// failure for every place in the product: in a live project it had drifted
+// into an ordinary empty table, so this read returned nothing while the rows
+// sat untouched in `locations` — the places list showed "None yet" after nine
+// depots had been saved, and /shipments/new refused because it counts them.
+//
+// Embedding the gazetteer and coalescing in `mapLocationRow` costs nothing
+// and depends only on tables, which cannot drift into something else without
+// the write path failing loudly first. `mapCheckpoint` already reads this
+// way, so this is now one pattern rather than two.
+const LOCATION_COLUMNS =
+  "id, name, kind, latitude, longitude, archived_at, sa_places(name, latitude, longitude)";
 
 export interface WriteResult {
   ok: boolean;
@@ -74,8 +96,8 @@ export async function listLocations(
   const supabase = await supabaseServer();
 
   let query = supabase
-    .from("location_points")
-    .select(LOCATION_POINT_COLUMNS)
+    .from("locations")
+    .select(LOCATION_COLUMNS)
     .order("name", { ascending: true });
 
   if (!includeArchived) query = query.is("archived_at", null);
@@ -83,7 +105,7 @@ export async function listLocations(
   const { data, error } = await query;
 
   if (error) fail("load locations", error);
-  return ((data ?? []) as unknown as LocationPointRow[]).map(mapLocationPoint);
+  return ((data ?? []) as unknown as LocationRow[]).map(mapLocationRow);
 }
 
 export async function createLocation(

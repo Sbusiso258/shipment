@@ -13,10 +13,10 @@ import { cache } from "react";
 import { fail } from "./fail";
 import {
   mapCheckpoint,
-  mapLocationPoint,
+  mapLocationRow,
   mapShipment,
   type CheckpointRow,
-  type LocationPointRow,
+  type LocationRow,
   type ShipmentRow,
 } from "./mappers";
 import { supabaseServer } from "./supabase/server";
@@ -38,8 +38,12 @@ const SHIPMENT_COLUMNS =
 const CHECKPOINT_COLUMNS =
   "id, shipment_id, sequence_no, kind, label, location_id, latitude, longitude, planned_at, actual_at, exception_kind, note, recorded_at, sa_places(name, latitude, longitude)";
 
-const LOCATION_POINT_COLUMNS =
-  "location_id, name, kind, effective_latitude, effective_longitude, coordinate_source, place_name";
+// The BASE TABLE, not the `location_points` view — see the note in
+// src/services/locations.ts. The view had drifted into an empty table in a
+// live project, which silently emptied the board's route lines and the
+// journey map's endpoints along with the places list.
+const LOCATION_COLUMNS =
+  "id, name, kind, latitude, longitude, archived_at, sa_places(name, latitude, longitude)";
 
 /**
  * Postgres raises `invalid input syntax for type uuid` when a non-uuid is
@@ -114,15 +118,15 @@ export async function loadBoard(clock: JourneyClock): Promise<BoardData> {
   ];
 
   const { data: locationData, error: locationError } = await supabase
-    .from("location_points")
-    .select(LOCATION_POINT_COLUMNS)
-    .in("location_id", locationIds);
+    .from("locations")
+    .select(LOCATION_COLUMNS)
+    .in("id", locationIds);
 
   if (locationError) fail("load locations", locationError);
 
   const locations = new Map(
-    ((locationData ?? []) as unknown as LocationPointRow[])
-      .map(mapLocationPoint)
+    ((locationData ?? []) as unknown as LocationRow[])
+      .map(mapLocationRow)
       .map((point) => [point.locationId, point])
   );
 
@@ -210,14 +214,14 @@ async function _loadJourney(shipmentId: string): Promise<JourneyData | null> {
   );
 
   const { data: locationData, error: locationError } = await supabase
-    .from("location_points")
-    .select(LOCATION_POINT_COLUMNS)
-    .in("location_id", [shipment.originLocationId, shipment.destinationLocationId]);
+    .from("locations")
+    .select(LOCATION_COLUMNS)
+    .in("id", [shipment.originLocationId, shipment.destinationLocationId]);
 
   if (locationError) fail("load endpoints", locationError);
 
-  const points = ((locationData ?? []) as unknown as LocationPointRow[]).map(
-    mapLocationPoint
+  const points = ((locationData ?? []) as unknown as LocationRow[]).map(
+    mapLocationRow
   );
 
   return {

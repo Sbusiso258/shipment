@@ -158,6 +158,51 @@ export interface LocationPointRow {
   place_name: string | null;
 }
 
+/**
+ * A `locations` row with its gazetteer entry embedded.
+ *
+ * WHY THIS EXISTS ALONGSIDE `LocationPointRow`. Reads used to go through the
+ * `location_points` view, which did the coalescing in SQL. That view turned
+ * out to be the single point of failure for every place in the product: in a
+ * live project it had drifted into an ordinary empty table, so three separate
+ * read paths returned nothing while the rows sat untouched in `locations`.
+ *
+ * Reading the base table and coalescing here removes that dependency
+ * entirely. It is also the pattern `mapCheckpoint` already uses — same
+ * embed, same precedence — so there is now one way this is done rather than
+ * two.
+ */
+export interface LocationRow {
+  id: string;
+  name: string;
+  kind: string;
+  latitude: string | number | null;
+  longitude: string | number | null;
+  archived_at: string | null;
+  sa_places: { name: string; latitude: string | number; longitude: string | number } | null;
+}
+
+export function mapLocationRow(row: LocationRow): LocationPoint {
+  // The location's own pin wins; the town it sits in is the fallback. Exactly
+  // the precedence the view encoded, and never a guess — with neither, the
+  // place reports `unknown` rather than rendering as a point in the Atlantic.
+  const exactLatitude = toNumber(row.latitude);
+  const exactLongitude = toNumber(row.longitude);
+  const placeLatitude = toNumber(row.sa_places?.latitude ?? null);
+  const placeLongitude = toNumber(row.sa_places?.longitude ?? null);
+
+  return {
+    locationId: row.id,
+    name: row.name,
+    kind: row.kind,
+    latitude: exactLatitude ?? placeLatitude,
+    longitude: exactLongitude ?? placeLongitude,
+    coordinateSource:
+      exactLatitude !== null ? "exact" : placeLatitude !== null ? "place" : "unknown",
+    placeName: row.sa_places?.name ?? null,
+  };
+}
+
 export function mapLocationPoint(row: LocationPointRow): LocationPoint {
   return {
     locationId: row.location_id,
