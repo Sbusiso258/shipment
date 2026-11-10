@@ -56,6 +56,38 @@ Everything else in V1 exists only to make that view possible and trustworthy.
 
 ## Deliberately not in V1
 
+### The Live Feed and Tasks panel — built, and deliberately not mounted
+
+Settled with the owner on 2026-11-10, and recorded because it looks exactly
+like an oversight and has been rediscovered as one twice.
+
+`src/components/feed/feed-panel.tsx` is complete — three Radix tabs over a
+live feed, recent messages and tasks, with a shared composer. So are its
+children (`messages-tab.tsx`, `tasks-tab.tsx`, `panel-composer.tsx`,
+`panel-form-state.ts`), `src/lib/feed.ts`'s `buildFeed()` and its unit tests,
+and the services behind them (`postAnnouncement`, `createTask`,
+`setTaskStatus`, `loadTasks`, `loadAnnouncements`).
+
+**Nothing imports any of it.** It was on the dashboard and the owner asked for
+it to be taken off; asked later where it should live instead, the answer was
+to leave it out. So it is not a gap and it is not half-finished work — it is a
+feature that was removed from the product.
+
+Consequences worth knowing before anybody "fixes" this:
+
+- Three dependencies exist only for it — `@radix-ui/react-tabs` directly, and
+  `@radix-ui/react-dialog` and `@radix-ui/react-select` are unused by anything
+  at all. Removing the panel would make all three droppable.
+- `announcements` and `tasks` are real tables with real RLS policies and no UI
+  path. `/admin/setup`'s clear-data step still counts and retracts
+  announcements, so the table is not inert.
+- Wiring it up needs only three server actions (`announce`, `createTask`,
+  `toggleTask`) and somewhere to mount it. That is a short job if the decision
+  is ever reversed — which is the reason to leave the components in place
+  rather than delete them.
+
+### The rest
+
 Each has a seam left for it, described in `AGENTS.md`:
 
 - Courier and freight-forwarder API integrations. Checkpoint ingestion is

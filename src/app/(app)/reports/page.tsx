@@ -7,6 +7,7 @@ import {
   volumeByRoute,
 } from "@/lib/reports";
 import { loadRecentCheckpoints } from "@/services/activity";
+import { orNoticed } from "@/services/fail";
 import { requireSession } from "@/services/bootstrap";
 import { loadOversight, requestNow } from "@/services/oversight";
 
@@ -72,14 +73,23 @@ export default async function ReportsPage() {
   const session = await requireSession();
   const nowMs = requestNow();
 
-  const [{ rows }, checkpoints] = await Promise.all([
+  // Checkpoints feed ONE of the five panels — the exception breakdown. The
+  // other four come from the board, so a database behind on a checkpoint
+  // column should cost that panel and not the on-time rate, the routes, the
+  // drivers and the vehicles alongside it.
+  const [{ rows }, checkpointsResult] = await Promise.all([
     loadOversight(
       nowMs,
       session.activeOrg.timezone,
       session.activeOrg.defaultSilenceThresholdDays
     ),
-    loadRecentCheckpoints(200),
+    orNoticed(
+      loadRecentCheckpoints(200),
+      [] as Awaited<ReturnType<typeof loadRecentCheckpoints>>
+    ),
   ]);
+
+  const checkpoints = checkpointsResult.value;
 
   const shipments = rows.map((row) => row.shipment);
   const onTime = onTimeReport(shipments, session.activeOrg.timezone);
@@ -147,6 +157,16 @@ export default async function ReportsPage() {
       <div className="grid gap-5 lg:grid-cols-2">
         {/* --- exceptions ------------------------------------------------- */}
         <Panel title="Exceptions" note="Every problem reported at a stage.">
+          {/* "Nothing has gone wrong yet" is a strong claim, and it is the
+              default empty state below. A failed read must not borrow it. */}
+          {checkpointsResult.notice ? (
+            <p
+              role="status"
+              className="rounded-control bg-late-bg px-3 py-2 text-small whitespace-pre-wrap text-late"
+            >
+              {checkpointsResult.notice}
+            </p>
+          ) : null}
           <Rows
             empty="Nothing has gone wrong yet."
             rows={exceptions.map((e) => ({
