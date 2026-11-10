@@ -186,23 +186,26 @@ export async function requireActor(): Promise<Actor> {
 export async function requireSession(preferredOrgId?: string): Promise<Session> {
   const actor = await requireActor();
 
-  // HARDCODED BYPASS
-  if (actor.memberships.length === 0) {
-    console.log("🚨 FORCING SESSION: No membership found, using fake org.");
-    
-    return {
-      ...actor,
-      activeOrg: {
-        id: "11111111-1111-1111-1111-111111111111", 
-        name: "Demo Logistics",
-        slug: "demo-logistics",
-        timezone: "Africa/Johannesburg",
-        defaultSilenceThresholdDays: 3,
-        isSubscriber: true,
-      },
-      activeRole: "admin" as MembershipRole,
-    };
-  }
+  // NEVER FABRICATE A SESSION HERE.
+  //
+  // This line was replaced at one point by a block that returned a made-up
+  // "Demo Logistics" organisation with `activeRole: "admin"` whenever somebody
+  // had no membership. It did not leak data — the id was not a real
+  // organisation, `my_org_ids()` returns nothing for such a user, and RLS
+  // refused every query regardless — but it rendered the entire operations
+  // shell as though the person were an admin, which is the shape of fault
+  // non-negotiable 1 exists to forbid: authorization is a database property,
+  // never a UI one.
+  //
+  // It also made `/no-access` unreachable, which is the screen that explains
+  // this exact state. "You are signed in but nobody has added you to an
+  // organisation yet" is expected here, because access is granted by the
+  // platform owner — so it gets an explanation, not a fake dashboard.
+  //
+  // If a signed-in user with no membership needs somewhere to land during
+  // development, the supported path is `DEV_AUTO_LOGIN` in `src/proxy.ts`
+  // with a real account, or a real membership created from `/admin`.
+  if (actor.memberships.length === 0) redirect("/no-access");
 
   const active =
     actor.memberships.find((m) => m.orgId === preferredOrgId) ?? actor.memberships[0];
