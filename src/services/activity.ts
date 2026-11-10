@@ -1,3 +1,4 @@
+import { fail } from "./fail";
 import { mapCheckpoint, type CheckpointRow } from "./mappers";
 import { supabaseServer } from "./supabase/server";
 import type { JourneyCheckpoint } from "@/types/domain";
@@ -27,11 +28,13 @@ export async function loadRecentCheckpoints(limit = 40): Promise<JourneyCheckpoi
     .order("actual_at", { ascending: false })
     .limit(limit);
 
-  if (error) {
-    // Never interpolate a row into an error: it can reach somebody who was
-    // not permitted to read it.
-    throw new Error(`Failed to load recent activity: ${error.message}`);
-  }
+  // THROUGH `fail()`, NOT A BARE `Error`. This threw directly, which meant a
+  // missing column here raised a plain Error rather than a
+  // `SchemaBehindError` — so `orNoticed` could not degrade it and the
+  // paragraph naming the migration to apply was never produced. `fail()`
+  // keeps the same discipline about never interpolating a ROW; a table or
+  // column name is safe, a row is not.
+  if (error) fail("load recent activity", error);
 
   return ((data ?? []) as unknown as CheckpointRow[]).map(mapCheckpoint);
 }

@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import type { MembershipRole, Organisation } from "@/types/domain";
 
+import { fail } from "./fail";
 import { supabaseServer } from "./supabase/server";
 
 /**
@@ -155,11 +156,12 @@ export async function requireActor(): Promise<Actor> {
     supabase.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle(),
   ]);
 
-  if (error) {
-    // Never interpolate a row into an error message: it can reach a user who
-    // was not permitted to read it.
-    throw new Error(`Failed to load memberships: ${error.message}`);
-  }
+  // THROUGH `fail()`. This threw a bare Error, so a missing column on
+  // `memberships` or the embedded `organisations` could never be a
+  // `SchemaBehindError` — and since `requireActor` runs on every route, that
+  // is the one place where naming the migration to apply matters most.
+  // `fail()` keeps the same rule about never interpolating a ROW.
+  if (error) fail("load memberships", error);
 
   const rows = (data ?? []) as unknown as MembershipRow[];
 

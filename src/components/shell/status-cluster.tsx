@@ -46,9 +46,14 @@ export function StatusCluster({
 
   const count = summary.counts[worst.verdict];
 
+  // `/shipments`, NOT `/`. This linked to `/?show=<verdict>`, and the dashboard
+  // never reads `searchParams` — the `?show=` reader is `OversightBoard`, which
+  // renders on `/shipments`. So the one indicator the whole shell exists to
+  // surface led somewhere that silently ignored the filter: clicking "3 late"
+  // just showed the unfiltered dashboard.
   return (
     <Link
-      href={`/?show=${worst.verdict}`}
+      href={`/shipments?show=${worst.verdict}`}
       className={cn(
         "flex items-center gap-2 rounded-control px-1.5 py-1 transition-colors hover:bg-ink-100",
         className

@@ -1,5 +1,6 @@
 import type { CheckpointException, CheckpointKind } from "@/types/domain";
 
+import { fail } from "./fail";
 import { supabaseServer } from "./supabase/server";
 
 /**
@@ -75,7 +76,7 @@ async function nextSequenceNo(shipmentId: string): Promise<number> {
     .limit(1)
     .maybeSingle();
 
-  if (error) throw new Error(`Failed to read sequence: ${error.message}`);
+  if (error) fail("read the next stage number", error);
 
   const highest = (data as { sequence_no: number } | null)?.sequence_no ?? 0;
   return highest + SEQUENCE_STEP;
@@ -167,6 +168,6 @@ export async function loadPlaces(): Promise<GazetteerPlace[]> {
     .select("id, name, kind")
     .order("name", { ascending: true });
 
-  if (error) throw new Error(`Failed to load places: ${error.message}`);
+  if (error) fail("load places", error);
   return (data ?? []) as GazetteerPlace[];
 }
