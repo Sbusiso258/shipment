@@ -9,6 +9,7 @@ import {
 } from "@/components/team/team-controls";
 import { canInvite } from "@/lib/roles";
 import { requireSession } from "@/services/bootstrap";
+import { orNoticed } from "@/services/fail";
 import { listInvitations, listMembers } from "@/services/provisioning";
 
 import {
@@ -34,10 +35,18 @@ export default async function TeamPage() {
   // notFound(), not a redirect: a redirect confirms the route exists.
   if (!canInvite(session.activeRole)) notFound();
 
-  const [members, invitations] = await Promise.all([
+  // MEMBERS ARE THE PAGE; pending invitations are a panel under it. A failure
+  // reading invitations used to hide the member list as well, which is the
+  // wrong half to lose — the list is how an admin removes somebody's access.
+  const [members, invitationsResult] = await Promise.all([
     listMembers(session.activeOrg.id),
-    listInvitations(session.activeOrg.id),
+    orNoticed(
+      listInvitations(session.activeOrg.id),
+      [] as Awaited<ReturnType<typeof listInvitations>>
+    ),
   ]);
+
+  const invitations = invitationsResult.value;
 
   const pending = invitations.filter(
     (invitation) => invitation.acceptedAt === null && invitation.revokedAt === null
@@ -86,6 +95,18 @@ export default async function TeamPage() {
           <InviteForm action={inviteMemberAction} />
         </div>
       </section>
+
+      {/* The pending panel is normally hidden when there is nothing waiting.
+          A read FAILURE is not the same as nothing waiting, so it says so
+          rather than looking like an empty queue. */}
+      {invitationsResult.notice ? (
+        <p
+          role="status"
+          className="rounded-control bg-late-bg px-3 py-2 text-small whitespace-pre-wrap text-late"
+        >
+          {invitationsResult.notice}
+        </p>
+      ) : null}
 
       {pending.length > 0 ? (
         <section className="rounded-panel border border-ink-200 bg-paper-raised shadow-panel">

@@ -8,6 +8,7 @@ import {
 import { canManageLocations } from "@/lib/roles";
 import { requireSession } from "@/services/bootstrap";
 import { loadPlaces } from "@/services/checkpoints";
+import { orNoticed } from "@/services/fail";
 import { listLocations } from "@/services/locations";
 
 import { archiveLocationAction, createLocationAction } from "./actions";
@@ -31,10 +32,19 @@ export default async function LocationsPage() {
   const mayManage = canManageLocations(session.activeRole);
 
   // The gazetteer is only needed by the form, so a viewer never pays for it.
-  const [locations, places] = await Promise.all([
+  // THE LIST IS THE POINT OF THIS PAGE. The gazetteer only feeds the
+  // "add a place" picker, so a database behind on `sa_places` should cost the
+  // picker its options — not hide every depot the operator already has. It hid
+  // all of them, because a `Promise.all` rejects if either side does.
+  const [locations, placesResult] = await Promise.all([
     listLocations(),
-    mayManage ? loadPlaces() : Promise.resolve([]),
+    orNoticed(
+      mayManage ? loadPlaces() : Promise.resolve([]),
+      [] as Awaited<ReturnType<typeof loadPlaces>>
+    ),
   ]);
+
+  const places = placesResult.value;
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 py-6">
@@ -120,6 +130,14 @@ export default async function LocationsPage() {
             Pick the town it sits in. Add an exact coordinate only if you have a
             real one — nothing here is looked up from an address.
           </p>
+          {placesResult.notice ? (
+            <p
+              role="status"
+              className="mb-3 rounded-control bg-late-bg px-3 py-2 text-small whitespace-pre-wrap text-late"
+            >
+              {placesResult.notice}
+            </p>
+          ) : null}
           <LocationForm action={createLocationAction} places={places} />
         </section>
       ) : null}
