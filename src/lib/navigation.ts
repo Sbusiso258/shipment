@@ -29,7 +29,11 @@ export type NavIcon =
   | "operators"
   | "drivers"
   | "vehicles"
-  | "places";
+  | "places"
+  | "messages"
+  | "reports"
+  | "settings"
+  | "admin";
 
 export interface NavItem {
   href: string;
@@ -44,7 +48,7 @@ export function navigationFor(
   const mayManageFleet = canManageLocations(role);
   const mayAdminister = canInvite(role);
 
-    return [
+  return [
     { href: "/", label: "Dashboard", icon: "dashboard" },
     { href: "/shipments", label: "Shipments", icon: "shipments" },
     ...(mayAdminister
@@ -57,5 +61,13 @@ export function navigationFor(
           { href: "/locations", label: "Places", icon: "places" as const },
         ]
       : []),
-  ]; // <-- The array now closes right here.
+    { href: "/messages", label: "Messages", icon: "messages" },
+    { href: "/reports", label: "Reports", icon: "reports" },
+    ...(mayAdminister
+      ? [{ href: "/settings", label: "Settings", icon: "settings" as const }]
+      : []),
+    ...(isPlatformAdmin
+      ? [{ href: "/admin", label: "Admin", icon: "admin" as const }]
+      : []),
+  ];
 }
