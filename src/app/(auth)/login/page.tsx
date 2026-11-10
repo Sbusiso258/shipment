@@ -29,6 +29,10 @@ export default async function LoginPage({
   const linkExpired = error === "link_expired";
   const missingCode = error === "missing_code";
 
+  // Only shown when a Supabase auth cookie was actually present, so a
+  // first-time visitor is never told their session ended.
+  const sessionEnded = error === "session_ended";
+
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-16">
       <div className="flex flex-col gap-2">
@@ -63,6 +67,19 @@ export default async function LoginPage({
             </li>
           </ul>
           <p className="mt-2">You can still sign in by hand below.</p>
+        </div>
+      ) : null}
+
+      {sessionEnded ? (
+        <div
+          role="status"
+          className="rounded-panel border border-ink-200 bg-paper-raised p-4 text-small text-ink-700"
+        >
+          <p className="font-medium text-ink-950">Your session has ended.</p>
+          <p className="mt-2">
+            Sign in again and you will be taken back to where you were.
+            Anything you had typed but not saved will need re-entering.
+          </p>
         </div>
       ) : null}
 

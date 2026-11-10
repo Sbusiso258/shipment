@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import type { MembershipRole, Organisation } from "@/types/domain";
 
+import { headers } from "next/headers";
 import { cache } from "react";
 
 import { fail } from "./fail";
@@ -89,7 +90,25 @@ export async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) redirect("/login");
+  if (!user) {
+    // KEEP WHERE THEY WERE. This used to be a bare `redirect("/login")`, so a
+    // session that lapsed between the proxy's check and this one lost the
+    // destination — and inside a server action it also discarded whatever the
+    // person had typed, with nothing on the login screen explaining either.
+    //
+    // `x-pathname` is set by src/proxy.ts. Absent in any context the proxy
+    // did not handle, so this falls back to a plain redirect rather than
+    // guessing a path.
+    const path = (await headers()).get("x-pathname");
+    const safe = path && path.startsWith("/") && !path.startsWith("//") ? path : null;
+
+    redirect(
+      safe
+        ? `/login?error=session_ended&next=${encodeURIComponent(safe)}`
+        : "/login?error=session_ended"
+    );
+  }
+
   return { supabase, user };
 }
 

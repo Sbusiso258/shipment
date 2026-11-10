@@ -45,7 +45,19 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(setupUrl);
   }
 
-  let response = NextResponse.next({ request });
+  // THE PATHNAME, FORWARDED TO THE RENDER. `requireUser` in
+  // src/services/bootstrap.ts is the second line of this gate — it catches a
+  // session that dies between here and the render — and it had no way to know
+  // where the request was headed, so it redirected to /login with no `next`
+  // and dropped the person on the dashboard having lost whatever they typed.
+  //
+  // A Server Component cannot read the URL, but it can read request headers,
+  // so the path travels as one. Set on the REQUEST headers, not the response:
+  // only the former reaches the render.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", pathname);
+
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabase = createServerClient(url, anonKey, {
     cookies: {
@@ -56,7 +68,10 @@ export async function proxy(request: NextRequest) {
         for (const { name, value } of cookiesToSet) {
           request.cookies.set(name, value);
         }
-        response = NextResponse.next({ request });
+        // Rebuilt here, so it has to carry the header too — dropping it
+        // would make `next` work only on requests that needed no token
+        // refresh, which is the hardest kind of bug to reproduce.
+        response = NextResponse.next({ request: { headers: requestHeaders } });
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(name, value, options);
         }
@@ -135,6 +150,23 @@ export async function proxy(request: NextRequest) {
     loginUrl.pathname = "/login";
     // Preserve where they were headed so login can return them there.
     loginUrl.searchParams.set("next", pathname);
+
+    // DID THEY HAVE A SESSION, OR HAVE THEY NEVER SIGNED IN? Both arrive here
+    // with `user` null, and the honest message differs: "your session has
+    // ended" is wrong and faintly alarming to tell a first-time visitor.
+    //
+    // A Supabase auth cookie that is present while `getUser()` returns null
+    // means the token was there and is no longer good — expired, revoked, or
+    // from a project that has moved. A clean sign-out removes the cookie, so
+    // this does not fire for somebody who left on purpose. The cookie is
+    // chunked for large tokens (`…auth-token.0`), hence the prefix test
+    // rather than an exact name.
+    const hadSession = request.cookies
+      .getAll()
+      .some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+
+    if (hadSession) loginUrl.searchParams.set("error", "session_ended");
+
     return NextResponse.redirect(loginUrl);
   }
 
