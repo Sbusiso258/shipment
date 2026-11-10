@@ -109,12 +109,23 @@ export async function createLocationAction(
 
   // EVERY FAILURE PATH HANDS THE TYPING BACK. Returning a bare
   // `{ ok: false, error }` is what made a rejected submission erase the form.
-  const failed = (error: string): LocationFormState => ({
-    ok: false,
-    error,
-    values: submittedValues(form),
-    attempt: (_prev.attempt ?? 0) + 1,
-  });
+  const failed = (error: string): LocationFormState => {
+    // EVERY rejection, not just the database ones. `logWriteFailure` only
+    // fires once Postgres has refused a row, so a submission turned away by
+    // a validation check earlier in this function left no trace at all —
+    // which is exactly the case that had us guessing.
+    //
+    // The message is this application's own sentence, written for a user, so
+    // it carries no row data by construction.
+    console.error(`[rejected] create a place: ${error}`);
+
+    return {
+      ok: false,
+      error,
+      values: submittedValues(form),
+      attempt: (_prev.attempt ?? 0) + 1,
+    };
+  };
 
   if (!canManageLocations(session.activeRole)) {
     return failed("Your role cannot add places.");
