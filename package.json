@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "verify:migrations": "node supabase/verify-migrations.mjs",
     "verify:rls": "node supabase/verify-rls.mjs",
+    "verify:rls:live": "node --env-file-if-exists=.env.local supabase/verify-rls-live.mjs",
     "verify:upgrade": "node supabase/verify-upgrade.mjs",
     "db:url": "node supabase/set-db-url.mjs",
     "db:check": "node --env-file-if-exists=.env.local supabase/remote.mjs",
