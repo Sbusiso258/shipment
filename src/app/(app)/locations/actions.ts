@@ -24,6 +24,7 @@ import type { LocationKind } from "@/types/domain";
 export type { LocationFormState } from "@/components/locations/location-form-state";
 
 import type { LocationFormState } from "@/components/locations/location-form-state";
+import { submittedValues } from "@/lib/form-values";
 
 function field(form: FormData, name: string): string | null {
   const value = form.get(name);
@@ -106,18 +107,30 @@ export async function createLocationAction(
 ): Promise<LocationFormState> {
   const session = await requireSession();
 
+  // EVERY FAILURE PATH HANDS THE TYPING BACK. Returning a bare
+  // `{ ok: false, error }` is what made a rejected submission erase the form.
+  const failed = (error: string): LocationFormState => ({
+    ok: false,
+    error,
+    values: submittedValues(form),
+    attempt: (_prev.attempt ?? 0) + 1,
+  });
+
   if (!canManageLocations(session.activeRole)) {
-    return { ok: false, error: "Your role cannot add places." };
+    return failed("Your role cannot add places.");
   }
 
   const read = readInput(form);
-  if (!read.ok) return { ok: false, error: read.error };
+  if (!read.ok) return failed(read.error);
 
   const result = await createLocation({ ...read.input, orgId: session.activeOrg.id });
-  if (!result.ok) return result;
+  if (!result.ok) return failed(result.error ?? "Could not save the place.");
 
   revalidatePath("/locations");
-  return { ok: true, error: null };
+
+  // Nothing carried back on success: the form SHOULD clear, and a bumped
+  // `attempt` is what remounts it empty.
+  return { ok: true, error: null, attempt: (_prev.attempt ?? 0) + 1 };
 }
 
 export async function updateLocationAction(

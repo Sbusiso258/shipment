@@ -223,6 +223,17 @@ export function ShipmentForm({
   successMessage?: string;
 }) {
   const [state, submit, pending] = useActionState(action, EMPTY_FORM_STATE);
+
+  // WHAT THE BOXES SHOULD SAY. After a rejected submission the action hands
+  // back what was typed, and that wins over `defaults` — otherwise React 19's
+  // automatic form reset discards all fourteen fields and the operator
+  // retypes a whole shipment to meet the same error again.
+  //
+  // The stage rows below are NOT restored from here: they are controlled
+  // React state in this component, so they already survive.
+  const kept = state.values;
+  const shown = (field: keyof ShipmentDefaults, fallback?: string) =>
+    kept?.[field] ?? fallback;
   const [stages, setStages] = useState<StageRow[]>(() => [blankStage(0)]);
   const [nextId, setNextId] = useState(1);
 
@@ -240,7 +251,9 @@ export function ShipmentForm({
   }
 
   return (
-    <form action={submit} className="flex flex-col gap-5">
+    // KEYED ON THE ATTEMPT. `defaultValue` is read once, at mount, so handing
+    // the values back is not enough on its own.
+    <form key={state.attempt ?? 0} action={submit} className="flex flex-col gap-5">
       {/* --- what it is ------------------------------------------------- */}
       <fieldset className="flex flex-col gap-3">
         <legend className="mb-1 text-small font-medium text-ink-600">
@@ -254,7 +267,7 @@ export function ShipmentForm({
               id="ship-reference"
               name="reference"
               required
-              defaultValue={defaults?.reference}
+              defaultValue={shown("reference", defaults?.reference)}
               placeholder="N3-0042"
               className="font-code"
             />
@@ -266,7 +279,7 @@ export function ShipmentForm({
             <select
               id="ship-direction"
               name="direction"
-              defaultValue={defaults?.direction ?? "outbound"}
+              defaultValue={shown("direction", defaults?.direction ?? "outbound")}
               className={SELECT}
             >
               <option value="outbound">Outbound</option>
@@ -279,7 +292,7 @@ export function ShipmentForm({
             <select
               id="ship-mode"
               name="mode"
-              defaultValue={defaults?.mode ?? "road"}
+              defaultValue={shown("mode", defaults?.mode ?? "road")}
               className={SELECT}
             >
               {MODES.map(([value, label]) => (
@@ -298,7 +311,7 @@ export function ShipmentForm({
               id="ship-origin"
               name="originLocationId"
               required
-              defaultValue={defaults?.originLocationId ?? ""}
+              defaultValue={shown("originLocationId", defaults?.originLocationId ?? "")}
               className={SELECT}
             >
               <option value="" disabled>
@@ -318,7 +331,7 @@ export function ShipmentForm({
               id="ship-destination"
               name="destinationLocationId"
               required
-              defaultValue={defaults?.destinationLocationId ?? ""}
+              defaultValue={shown("destinationLocationId", defaults?.destinationLocationId ?? "")}
               className={SELECT}
             >
               <option value="" disabled>
@@ -346,7 +359,7 @@ export function ShipmentForm({
             <Input
               id="ship-carrier"
               name="carrierName"
-              defaultValue={defaults?.carrierName}
+              defaultValue={shown("carrierName", defaults?.carrierName)}
               placeholder="Own fleet"
             />
           </div>
@@ -358,8 +371,8 @@ export function ShipmentForm({
             emptyHint="No vehicles on the fleet yet — add them under Vehicles."
             placeholder="ND 123-456"
             code
-            defaultId={defaults?.vehicleId}
-            defaultText={defaults?.vehicleRegistration}
+            defaultId={shown("vehicleId", defaults?.vehicleId)}
+            defaultText={shown("vehicleRegistration", defaults?.vehicleRegistration)}
             options={vehicles.map((vehicle) => ({
               id: vehicle.id,
               label: vehicle.registration,
@@ -372,8 +385,8 @@ export function ShipmentForm({
             label="Driver"
             otherLabel="Not one of our drivers"
             emptyHint="No drivers on the fleet yet — add them under Drivers."
-            defaultId={defaults?.driverId}
-            defaultText={defaults?.driverName}
+            defaultId={shown("driverId", defaults?.driverId)}
+            defaultText={shown("driverName", defaults?.driverName)}
             options={drivers.map((driver) => ({
               id: driver.id,
               label: driver.fullName,
@@ -392,7 +405,7 @@ export function ShipmentForm({
           <Input
             id="ship-goods"
             name="goodsDescription"
-            defaultValue={defaults?.goodsDescription}
+            defaultValue={shown("goodsDescription", defaults?.goodsDescription)}
             placeholder="General merchandise, 12 pallets"
           />
         </div>
@@ -406,7 +419,7 @@ export function ShipmentForm({
               type="number"
               min="0"
               step="0.01"
-              defaultValue={defaults?.cargoValue}
+              defaultValue={shown("cargoValue", defaults?.cargoValue)}
               placeholder=""
             />
             {/* No default, and the help text says why an empty box is a real
@@ -425,7 +438,7 @@ export function ShipmentForm({
               type="number"
               min="0"
               step="0.001"
-              defaultValue={defaults?.weightKg}
+              defaultValue={shown("weightKg", defaults?.weightKg)}
             />
           </div>
         </div>
@@ -444,7 +457,7 @@ export function ShipmentForm({
               id="ship-dispatch"
               name="plannedDispatchAt"
               type="datetime-local"
-              defaultValue={defaults?.plannedDispatchAt}
+              defaultValue={shown("plannedDispatchAt", defaults?.plannedDispatchAt)}
             />
           </div>
 
@@ -454,7 +467,7 @@ export function ShipmentForm({
               id="ship-eta"
               name="plannedDeliveryAt"
               type="datetime-local"
-              defaultValue={defaults?.plannedDeliveryAt}
+              defaultValue={shown("plannedDeliveryAt", defaults?.plannedDeliveryAt)}
             />
           </div>
 
@@ -464,7 +477,7 @@ export function ShipmentForm({
               id="ship-promised"
               name="promisedDeliveryDate"
               type="date"
-              defaultValue={defaults?.promisedDeliveryDate}
+              defaultValue={shown("promisedDeliveryDate", defaults?.promisedDeliveryDate)}
             />
             <p className="text-micro text-ink-400">
               A day, not a time. Late at the end of this day, in your timezone.
@@ -481,7 +494,7 @@ export function ShipmentForm({
               type="number"
               min="1"
               max="30"
-              defaultValue={defaults?.silenceThresholdDays}
+              defaultValue={shown("silenceThresholdDays", defaults?.silenceThresholdDays)}
             />
             <p className="text-micro text-ink-400">
               Days without a stage before this load is reported as silent.
@@ -491,7 +504,7 @@ export function ShipmentForm({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="ship-notes">Notes</Label>
-            <Input id="ship-notes" name="notes" defaultValue={defaults?.notes} />
+            <Input id="ship-notes" name="notes" defaultValue={shown("notes", defaults?.notes)} />
           </div>
         </div>
       </fieldset>

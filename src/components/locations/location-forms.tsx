@@ -94,8 +94,19 @@ export function LocationForm({
 }) {
   const [state, submit, pending] = useActionState(action, EMPTY_FORM_STATE);
 
+  // WHAT THE BOXES SHOULD SAY. After a rejected submission the action hands
+  // back what was typed, and that wins over `defaults` — otherwise React 19's
+  // automatic form reset throws the lot away and the person retypes
+  // everything to see the same error again.
+  const kept = state.values;
+  const shown = (field: keyof LocationDefaults, fallback?: string) =>
+    kept?.[field] ?? fallback;
+
   return (
-    <form action={submit} className="flex flex-col gap-3">
+    // KEYED ON THE ATTEMPT. `defaultValue` is read once, at mount, so handing
+    // back the values is not enough on its own — the form has to remount for
+    // React to look at them again.
+    <form key={state.attempt ?? 0} action={submit} className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="loc-name">Name</Label>
@@ -103,7 +114,7 @@ export function LocationForm({
             id="loc-name"
             name="name"
             required
-            defaultValue={defaults?.name}
+            defaultValue={shown("name", defaults?.name)}
             placeholder="Johannesburg Depot"
           />
         </div>
@@ -113,7 +124,7 @@ export function LocationForm({
           <select
             id="loc-kind"
             name="kind"
-            defaultValue={defaults?.kind ?? "depot"}
+            defaultValue={shown("kind", defaults?.kind ?? "depot")}
             className={SELECT}
           >
             {KINDS.map(([value, label]) => (
@@ -130,7 +141,7 @@ export function LocationForm({
         <select
           id="loc-place"
           name="saPlaceId"
-          defaultValue={defaults?.saPlaceId ?? ""}
+          defaultValue={shown("saPlaceId", defaults?.saPlaceId ?? "")}
           className={SELECT}
         >
           <option value="">Not set</option>
@@ -153,7 +164,7 @@ export function LocationForm({
           <Input
             id="loc-address"
             name="addressLine"
-            defaultValue={defaults?.addressLine ?? ""}
+            defaultValue={shown("addressLine", defaults?.addressLine ?? "")}
             placeholder="14 Director Road, Spartan"
           />
         </div>
@@ -164,7 +175,7 @@ export function LocationForm({
             id="loc-coordinates"
             name="coordinates"
             inputMode="text"
-            defaultValue={defaults?.coordinates ?? ""}
+            defaultValue={shown("coordinates", defaults?.coordinates ?? "")}
             placeholder="-29.8587, 31.0218"
             className="font-code"
           />
@@ -178,18 +189,18 @@ export function LocationForm({
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="loc-suburb">Suburb</Label>
-          <Input id="loc-suburb" name="suburb" defaultValue={defaults?.suburb ?? ""} />
+          <Input id="loc-suburb" name="suburb" defaultValue={shown("suburb", defaults?.suburb ?? "")} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="loc-city">City</Label>
-          <Input id="loc-city" name="city" defaultValue={defaults?.city ?? ""} />
+          <Input id="loc-city" name="city" defaultValue={shown("city", defaults?.city ?? "")} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="loc-postal">Postal code</Label>
           <Input
             id="loc-postal"
             name="postalCode"
-            defaultValue={defaults?.postalCode ?? ""}
+            defaultValue={shown("postalCode", defaults?.postalCode ?? "")}
           />
         </div>
       </div>
@@ -199,7 +210,7 @@ export function LocationForm({
         <Input
           id="loc-notes"
           name="notes"
-          defaultValue={defaults?.notes ?? ""}
+          defaultValue={shown("notes", defaults?.notes ?? "")}
           placeholder="Gate 3. Deliveries 06:00–16:00."
         />
       </div>

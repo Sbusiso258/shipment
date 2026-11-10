@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { submittedValues } from "@/lib/form-values";
 import { canEditShipments } from "@/lib/roles";
 import { requireSession } from "@/services/bootstrap";
 import { recordCheckpoint } from "@/services/checkpoints";
@@ -27,8 +28,17 @@ export async function createShipmentAction(
 ): Promise<ShipmentFormState> {
   const session = await requireSession();
 
+  // EVERY FAILURE PATH HANDS THE TYPING BACK. A bare `{ ok: false, error }`
+  // is what made one duplicate reference erase fourteen fields.
+  const failed = (error: string): ShipmentFormState => ({
+    ok: false,
+    error,
+    values: submittedValues(form),
+    attempt: (_prev.attempt ?? 0) + 1,
+  });
+
   if (!canEditShipments(session.activeRole)) {
-    return { ok: false, error: "Your role cannot record shipments." };
+    return failed("Your role cannot record shipments.");
   }
 
   const stages = readStages(form);
@@ -38,12 +48,10 @@ export async function createShipmentAction(
   // rejected AFTER the shipment was created. Say so first.
   const timeless = stages.filter((stage) => stage.plannedAt === null);
   if (timeless.length > 0) {
-    return {
-      ok: false,
-      error:
-        "Give every stage a planned time, or remove it: " +
-        timeless.map((s) => s.label).join(", "),
-    };
+    return failed(
+      "Give every stage a planned time, or remove it: " +
+        timeless.map((s) => s.label).join(", ")
+    );
   }
 
   const created = await createShipment({
@@ -53,7 +61,7 @@ export async function createShipmentAction(
   });
 
   if (!created.ok || !created.shipmentId) {
-    return { ok: false, error: created.error };
+    return failed(created.error ?? "Could not save the shipment.");
   }
 
   // THE SHIPMENT EXISTS NOW. PostgREST gives no multi-statement transaction,
@@ -82,5 +90,12 @@ export async function createShipmentAction(
   revalidatePath("/");
   revalidatePath(`/shipments/${created.shipmentId}`);
 
-  return { ok: true, error: null, unsavedStages };
+  // Nothing carried back on success: the form SHOULD clear, and the bumped
+  // `attempt` is what remounts it empty.
+  return {
+    ok: true,
+    error: null,
+    unsavedStages,
+    attempt: (_prev.attempt ?? 0) + 1,
+  };
 }

@@ -8,6 +8,7 @@ import {
   canLogCheckpoints,
   canManageParties,
 } from "@/lib/roles";
+import { submittedValues } from "@/lib/form-values";
 import { assignShipment, endAssignment } from "@/services/assignments";
 import { requireSession } from "@/services/bootstrap";
 import {
@@ -222,17 +223,28 @@ export async function updateShipmentAction(
 ): Promise<ShipmentFormState> {
   const session = await requireSession();
 
+  // Same contract as the create action: a rejection hands the typing back,
+  // because this is the SAME form component and React resets it either way.
+  // On an edit the loss is subtler and worse — the boxes come back filled
+  // with the ORIGINAL values, so it looks as though the change was saved.
+  const failed = (error: string): ShipmentFormState => ({
+    ok: false,
+    error,
+    values: submittedValues(form),
+    attempt: (_prev.attempt ?? 0) + 1,
+  });
+
   if (!canEditShipments(session.activeRole)) {
-    return { ok: false, error: "Your role cannot change shipments." };
+    return failed("Your role cannot change shipments.");
   }
 
   const result = await updateShipment(shipmentId, readShipment(form));
-  if (!result.ok) return result;
+  if (!result.ok) return failed(result.error ?? "Could not save the shipment.");
 
   revalidatePath(`/shipments/${shipmentId}`);
   revalidatePath("/");
 
-  return { ok: true, error: null };
+  return { ok: true, error: null, attempt: (_prev.attempt ?? 0) + 1 };
 }
 
 const LIFECYCLE: Record<string, LifecycleEvent> = {
