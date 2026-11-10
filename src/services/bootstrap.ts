@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 
 import type { MembershipRole, Organisation } from "@/types/domain";
 
+import { cache } from "react";
+
 import { fail } from "./fail";
 import { supabaseServer } from "./supabase/server";
 
@@ -137,7 +139,22 @@ export async function requirePlatformAdmin(): Promise<{
  * So: anything that may run before the first membership exists takes an
  * `Actor`. Anything that renders a board takes a `Session`.
  */
-export async function requireActor(): Promise<Actor> {
+/**
+ * MEMOISED PER REQUEST. Takes no arguments, so there is one memo slot.
+ *
+ * Every route called this at least twice — once from `(app)/layout.tsx` and
+ * once from the page — and each call ran `auth.getUser()` (a round trip to
+ * the auth server, not a database query) plus two queries. `src/proxy.ts`
+ * does a third `getUser` for the same request, which this cannot reach
+ * because the proxy runs before the render and has its own client.
+ *
+ * Per REQUEST only, which is the right scope: caching an identity across
+ * requests would let a revoked membership keep working, and revocation
+ * biting on the very next query is a property `verify:rls` asserts.
+ */
+export const requireActor = cache(_requireActor);
+
+async function _requireActor(): Promise<Actor> {
   const { supabase, user } = await requireUser();
 
   const [{ data, error }, { data: adminRow }] = await Promise.all([

@@ -71,26 +71,70 @@ export function needsAttention(verdict: ShipmentVerdict): boolean {
  * order is a list to read; ten late shipments with the five-days-late one at
  * the top is a list to act on.
  */
+export interface TroubleKey {
+  /** Verdict precedence — lower sorts first. */
+  attention: number;
+  /** Days late plus days silent. Higher sorts first. */
+  severity: number;
+  reference: string;
+}
+
+/**
+ * The sort key, computed ONCE per row.
+ *
+ * Exported so it can be tested on its own, and separated from the comparator
+ * for a reason that is not stylistic. `severity` used to be a closure called
+ * on BOTH operands of EVERY comparison, and each call builds timezone-aware
+ * dates: `lateness` goes through `dayIn`/`endOfDayIn` and `silenceDays`
+ * through `calendarDaysBetween`, so roughly three to six `Intl` timezone
+ * resolutions per call. At n log n comparisons that is millions of them for
+ * an ordering that only ever needed n.
+ *
+ * Reading the clock here rather than in the comparator also makes the sort
+ * self-consistent: a comparator that recomputes "days late" cannot be proven
+ * transitive if the clock moves underneath it.
+ */
+export function troubleKey(row: BoardRow, clock: JourneyClock): TroubleKey {
+  return {
+    attention: ATTENTION[row.verdict],
+    severity:
+      (lateness(row.shipment, clock)?.days ?? 0) +
+      (silenceDays(row.shipment, clock) ?? 0),
+    reference: row.shipment.reference,
+  };
+}
+
+/**
+ * Worst first; within a verdict, the one that has been wrong longest.
+ *
+ * The tie-break matters more than it looks. Ten late shipments in creation
+ * order is a list to read; ten late shipments with the five-days-late one at
+ * the top is a list to act on.
+ *
+ * A Schwartzian transform: key every row once, sort on the keys, unwrap. The
+ * resulting order is identical to the previous implementation's — there is a
+ * test that says so, because this is a refactor and nothing else would prove
+ * it.
+ */
 export function sortByTrouble(
   rows: BoardRow[],
   clock: JourneyClock
 ): BoardRow[] {
-  return [...rows].sort((a, b) => {
-    const byAttention = ATTENTION[a.verdict] - ATTENTION[b.verdict];
-    if (byAttention !== 0) return byAttention;
+  return rows
+    .map((row) => ({ row, key: troubleKey(row, clock) }))
+    .sort((a, b) => {
+      const byAttention = a.key.attention - b.key.attention;
+      if (byAttention !== 0) return byAttention;
 
-    const severity = (row: BoardRow) =>
-      (lateness(row.shipment, clock)?.days ?? 0) +
-      (silenceDays(row.shipment, clock) ?? 0);
+      const bySeverity = b.key.severity - a.key.severity;
+      if (bySeverity !== 0) return bySeverity;
 
-    const bySeverity = severity(b) - severity(a);
-    if (bySeverity !== 0) return bySeverity;
-
-    // Stable, readable last resort. Without it the order of two otherwise
-    // equal rows depends on however the database happened to return them,
-    // which makes the board shuffle between refreshes for no reason.
-    return a.shipment.reference.localeCompare(b.shipment.reference, "en");
-  });
+      // Stable, readable last resort. Without it the order of two otherwise
+      // equal rows depends on however the database happened to return them,
+      // which makes the board shuffle between refreshes for no reason.
+      return a.key.reference.localeCompare(b.key.reference, "en");
+    })
+    .map((entry) => entry.row);
 }
 
 export interface ValueAtRisk {

@@ -8,6 +8,8 @@ import type {
   TransportMode,
 } from "@/types/domain";
 
+import { cache } from "react";
+
 import { fail } from "./fail";
 import {
   mapCheckpoint,
@@ -161,7 +163,22 @@ export interface JourneyData {
 }
 
 /** One shipment and its whole journey. Null when RLS says it does not exist. */
-export async function loadJourney(shipmentId: string): Promise<JourneyData | null> {
+/**
+ * MEMOISED PER REQUEST, because every shipment page calls it twice.
+ *
+ * `generateMetadata` needs the reference for the <title> and the page body
+ * needs the whole journey, and Next runs them as separate calls — so the
+ * detail page was issuing six queries for one view and the edit page ten.
+ * `cache()` keys on the argument, and the argument is one string, so the
+ * second call returns the first call's promise.
+ *
+ * Per REQUEST only. Two users, or the same user refreshing, each pay once —
+ * which is correct: a journey that was cached across requests would show a
+ * stale position after somebody confirmed a stage.
+ */
+export const loadJourney = cache(_loadJourney);
+
+async function _loadJourney(shipmentId: string): Promise<JourneyData | null> {
   if (!UUID.test(shipmentId)) return null;
 
   const supabase = await supabaseServer();

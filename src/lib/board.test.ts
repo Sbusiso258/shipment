@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Shipment } from "@/types/domain";
 import type { JourneyClock, ShipmentVerdict } from "@/lib/journey";
+import { lateness, silenceDays } from "@/lib/journey";
 
 import {
   boardSummary,
@@ -11,6 +12,7 @@ import {
   needsAttention,
   sortByTrouble,
   stagesLabel,
+  troubleKey,
   type BoardRow,
   valueAtRisk,
 } from "./board";
@@ -87,6 +89,94 @@ describe("needsAttention", () => {
     expect(needsAttention("delivered")).toBe(false);
     expect(needsAttention("cancelled")).toBe(false);
     expect(needsAttention("on_track")).toBe(false);
+  });
+});
+
+describe("troubleKey", () => {
+  it("keys a row once, with the three things the sort compares", () => {
+    const key = troubleKey(row("A", "late", { promisedDeliveryDate: "2026-11-01" }), clock);
+    expect(key.reference).toBe("A");
+    expect(key.attention).toBe(1);        // late ranks below exception only
+    expect(key.severity).toBeGreaterThan(0);
+  });
+
+  it("gives a healthy shipment no severity", () => {
+    expect(troubleKey(row("B", "on_track"), clock).severity).toBe(0);
+  });
+});
+
+/**
+ * THE EQUIVALENCE TEST, and the reason it exists.
+ *
+ * `sortByTrouble` was changed from recomputing `severity` inside the
+ * comparator to keying each row once. That is a pure refactor, and the only
+ * thing that can say so is a comparison against the old algorithm. The old
+ * comparator is reproduced here verbatim; if the two ever disagree on any
+ * fixture, this fails and the refactor is not pure after all.
+ */
+describe("sortByTrouble is order-identical to the comparator it replaced", () => {
+  const ATTENTION_WAS: Record<ShipmentVerdict, number> = {
+    exception: 0,
+    late: 1,
+    at_risk: 2,
+    silent: 3,
+    on_track: 4,
+    delivered_late: 5,
+    delivered: 6,
+    cancelled: 7,
+  };
+
+  function sortTheOldWay(rows: BoardRow[]): BoardRow[] {
+    return [...rows].sort((a, b) => {
+      const byAttention = ATTENTION_WAS[a.verdict] - ATTENTION_WAS[b.verdict];
+      if (byAttention !== 0) return byAttention;
+      const severity = (r: BoardRow) =>
+        (lateness(r.shipment, clock)?.days ?? 0) +
+        (silenceDays(r.shipment, clock) ?? 0);
+      const bySeverity = severity(b) - severity(a);
+      if (bySeverity !== 0) return bySeverity;
+      return a.shipment.reference.localeCompare(b.shipment.reference, "en");
+    });
+  }
+
+  const fixtures: BoardRow[][] = [
+    // Every verdict, so the attention ranking is exercised end to end.
+    [
+      row("A", "cancelled"),
+      row("B", "delivered"),
+      row("C", "delivered_late"),
+      row("D", "on_track"),
+      row("E", "silent"),
+      row("F", "at_risk"),
+      row("G", "late", { promisedDeliveryDate: "2026-10-28" }),
+      row("H", "exception"),
+    ],
+    // Same verdict, different severities — the tie-break that matters.
+    [
+      row("MILD", "late", { promisedDeliveryDate: "2026-11-02" }),
+      row("SEVERE", "late", { promisedDeliveryDate: "2026-10-20" }),
+      row("MIDDLE", "late", { promisedDeliveryDate: "2026-10-30" }),
+    ],
+    // Identical in every respect but the reference: the last resort.
+    [row("ZULU", "on_track"), row("ALPHA", "on_track"), row("MIKE", "on_track")],
+    // Degenerate inputs.
+    [],
+    [row("ONLY", "exception")],
+  ];
+
+  for (const [i, rows] of fixtures.entries()) {
+    it(`matches on fixture ${i} (${rows.length} rows)`, () => {
+      expect(sortByTrouble(rows, clock).map((r) => r.shipment.reference)).toEqual(
+        sortTheOldWay(rows).map((r) => r.shipment.reference)
+      );
+    });
+  }
+
+  it("does not mutate the array it was given", () => {
+    const rows = [row("B", "on_track"), row("A", "exception")];
+    const before = rows.map((r) => r.shipment.reference);
+    sortByTrouble(rows, clock);
+    expect(rows.map((r) => r.shipment.reference)).toEqual(before);
   });
 });
 
